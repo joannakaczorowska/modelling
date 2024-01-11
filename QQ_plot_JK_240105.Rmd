@@ -1,0 +1,192 @@
+---
+title: "Example QQ Plot"
+author: "Joanna K"
+date: "2024-01-05"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r lib, include=T}
+suppressWarnings(suppressMessages(library(tidyverse)))
+suppressWarnings(suppressMessages(library(detectnorm)))
+theme_set(theme_bw())
+```
+
+## Introduction
+A normal probability (Q-Q) plot is a probability plot that we use to check whether the variable follows a normal distribution.
+If the variable is normally distributed, then if we plot it against their expected normal Z-scores, we will get a diagonal line. --> a standard uniform distribution
+
+## Generating the variables
+
+```{r generating variables}
+
+# normally distributed variables
+
+set.seed(10)
+
+# let's say we have 1000 observations of a variable
+n <- 1000
+# and the mean value (mi) is 10
+mi <- 10
+# and the standard deviation (sigma) is 5
+sigma <- 5
+
+df <- tibble(
+  normal_distr_1 = rnorm(n, mi, sigma)
+)
+
+glimpse(df)
+
+x <- df$normal_distr_1
+
+hist(x, 
+     xlim = c(min(x), max(x)), 
+     probability = TRUE, 
+     nclass = max(x) - min(x) + 1, 
+     col = 'lightblue')
+lines(density(x, bw=1), col = 'blue', lwd = 3)
+
+# Of course these are not completely perfectly normally distributed values.
+# If we want perfection, there is a density function in r - dnorm that gives you the normal distribution density based on vector of quantiles.
+
+sample.range <- range(df$normal_distr_1)
+values.range <- sample.range[1]:sample.range[2]
+normal_density_1 = dnorm(values.range, mi, sigma) 
+
+# this is how the perfect normal distribution would look like  
+ggplot() +
+geom_point(aes(values.range, normal_density_1))
+
+
+```
+## Adding the probabilities and positions and drawing the QQ Plots
+
+```{r prob and pos}
+
+# 1) Sort the data in ascending or descending order.
+
+df <- df %>% 
+  arrange(normal_distr_1)
+
+# 2) Add the positions
+# Find the z-value (cut-off point) for each segment.
+# this point is observation minus the mean, divided by sigma.
+# or you may use the function qnorm.
+
+result = vector("numeric", n) 
+
+for(i in 1:n) {
+   x = i/(n+1)
+ result[i] <- x
+  }
+result
+
+df$theoretical_quantiles_1 <- result
+
+df$sample_quantiles_1 <- (df$normal_distr_1 - mean(df$normal_distr_1)) / sd(df$normal_distr_1)
+
+df$probabilities_1 <- pnorm(df$normal_distr_1, mi, sigma)
+
+glimpse(df)
+# 3) Draw the qqplots
+
+# theoretical and sample quantiles comparison
+df %>% 
+  ggplot() +
+  geom_point(aes(theoretical_quantiles_1, sample_quantiles_1), alpha = 0.5, color = "steelblue")
+
+# theoretical quantiles and probabilities
+df %>% 
+  ggplot() +
+  geom_point(aes(theoretical_quantiles_1, probabilities_1), alpha = 0.5, color = "steelblue")
+
+# qq plot using the built-in function in ggplot
+df %>% 
+  ggplot() +
+  geom_qq(aes(sample = normal_distr_1), alpha = 0.5, color = "pink") +
+  geom_qq_line(aes(sample = normal_distr_1))
+
+# and in base r
+qqnorm(df$normal_distr_1, pch = 1, frame = FALSE)
+qqline(df$normal_distr_1, col = "steelblue", lwd = 2)
+
+```
+
+Notes: I do not fully understand how the build-in qqplot functions work - the units are different than when I do the plot manually.
+I guess there are different ways of drawing the QQ plots.
+It's also possible that I made a mistake in calculating the theoretical quantiles - I am still not sure whether I did it correctly.
+
+## Other distributions
+
+```{r other distr}
+# try also other distributions?
+
+df <- df %>% 
+  mutate(
+    skewed_distr_2 = rnonnorm(n = n, mean = mi, sd = sigma, skew = 20, kurt = 0)$dat,
+    skewed_distr_3 = rnonnorm(n = n, mean = mi, sd = sigma, skew = 0, kurt = 20)$dat
+    
+  )
+glimpse(df)
+
+x <- df$skewed_distr_2
+
+hist(x, 
+     xlim = c(min(x), max(x)), 
+     probability = TRUE, 
+     nclass = max(x) - min(x) + 1, 
+     col = 'lightblue')
+lines(density(x, bw=1), col = 'blue', lwd = 3)
+
+x <- df$skewed_distr_3
+
+hist(x, 
+     xlim = c(min(x), max(x)), 
+     probability = TRUE, 
+     nclass = max(x) - min(x) + 1, 
+     col = 'lightblue')
+lines(density(x, bw=1), col = 'blue', lwd = 3)
+
+# qq plots of these two
+# this time let's just do the build-in function plots.
+
+df %>% 
+  ggplot() +
+  geom_qq(aes(sample = skewed_distr_2), alpha = 0.5, color = "pink") +
+  geom_qq_line(aes(sample = skewed_distr_2))
+
+df %>% 
+  ggplot() +
+  geom_qq(aes(sample = skewed_distr_3), alpha = 0.5, color = "pink") +
+  geom_qq_line(aes(sample = skewed_distr_3))
+
+```
+
+## Use the linear regression equation to calculate the alpha and beta hat
+We can use linear regression to calculate the function that will draw for us the diagonal line of the QQ plot.
+x - positions = theoretical quantiles; 
+y - probabilities; 
+lm = x ~ y
+
+```{r lin regr}
+
+m <- lm(theoretical_quantiles_1 ~ probabilities_1, data = df)
+summary(m)
+
+# calculate the alpha hat, which is the intercept, and beta hat, which is the coefficient
+
+(alpha_hat <- m$coefficients[1])
+(beta_hat <- m$coefficients[2])
+
+# adding the function of the theoretical quantiles to the graph
+df %>% ggplot() +
+  geom_point(aes(theoretical_quantiles_1, probabilities_1), color = "steelblue", alpha = 0.2) +
+  geom_function(fun = ~alpha_hat + beta_hat * .x, color = "red")
+
+```
+
